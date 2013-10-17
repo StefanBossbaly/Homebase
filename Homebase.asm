@@ -151,11 +151,11 @@ INTCLR:         LDAA TFLG2              ;Clear overflow bit
                 ANDA #$80
                 STAA TFLG2
                 RTI                     ;Return
-                
-;Changes to SCISET were made by Hardik Patel
-;Your original SCISET is on a TXT file
-;This curentlly WORKS!!!! :)
-;-------------------------------------------------------------------------
+
+;-------------------------------------------------------------------------------
+;void SCISET(void)
+;Sets up the SCI interface
+;-------------------------------------------------------------------------------
 SCISET:         LDD     #156
                 STAB    sc1bdl
                 STAA    sc1bdh
@@ -164,7 +164,6 @@ SCISET:         LDD     #156
                 LDAA    #$0E
                 STAA    sc1cr2
                 RTS
-;-------------------------------------------------------------------------
 
 ;-------------------------------------------------------------------------------
 ;void SNDSCI(byte data)
