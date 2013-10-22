@@ -11,6 +11,9 @@ SPACE:          RMB 1
 USERIO:         RMB 1
 RECVAL:         FCB 0
 
+DCOUNT:         RMB 2
+TOGGLE:         FCB 0
+
 PRESSNUM:       RMB 1
 RECNUM:         RMB 1
         
@@ -19,6 +22,7 @@ MAIN:           MOVB #$FF, DDRA         ;Port A is all output
                 MOVB #$0F, DDRB         ;Upper nibble is output and lower nibble is input
                 JSR TIMSET              ;Setup Timer Overflow
                 MOVW #$0000, COUNT      ;Init count
+                MOVW #$0000, DCOUNT
                 MOVB #$00, SPACE        ;Init space
                 JSR SCISET              ;Setup SCI
                 CLI                     ;Enable interrupts
@@ -93,10 +97,11 @@ COV7SEG9:       LDAA #%01101111
 ;void INTH(void)
 ;Handles the timer overflow interrupt
 ;-------------------------------------------------------------------------------
-INTH:           LDD COUNT
+INTH:           JSR HAN7DISPLAY
+		LDD COUNT
                 ADDD #$0001
                 STD COUNT
-                CPD #$005F              ;See if we need to check the keypad
+                CPD #$001F              ;See if we need to check the keypad
                 BNE INTCLR
                 MOVW #$0000, COUNT      ;Reset the value of count
                 JSR HANREC
@@ -105,7 +110,38 @@ INTCLR:         LDAA TFLG2              ;Clear overflow bit
                 ANDA #$80
                 STAA TFLG2
                 RTI                     ;Return
-
+                
+;-------------------------------------------------------------------------------
+;void HAN7DISPLAY(void)
+;Handles the displaying of the user input and recieved value
+;-------------------------------------------------------------------------------
+HAN7DISPLAY:    PSHD
+                LDD DCOUNT
+                ADDD #$0001
+                STD DCOUNT
+                CPD #$0001
+                BNE HAN7DISPLAYEND
+                MOVW #$0000,DCOUNT
+                LDAA TOGGLE             ;See who's turn it is to display
+                CMPA #$00
+                BNE HAN7DISPLAYREC
+                LDAA USERIO             ;Its the user io turn
+                PSHA
+                JSR COV7SEG
+                LEAS 1,SP
+                ANDA #$7F               ;Make PA7 is low
+                STAA PORTA
+                MOVB #$01,TOGGLE
+                BRA HAN7DISPLAYEND
+HAN7DISPLAYREC: LDAA RECVAL
+                PSHA
+                JSR COV7SEG
+                LEAS 1,SP
+                ORAA #$80
+                STAA PORTA
+                MOVB #$00,TOGGLE
+HAN7DISPLAYEND: PULD
+                RTS
 ;-------------------------------------------------------------------------------
 ;void HANREC(void)
 ;Handles the saving of the recieved value if one was sent to us
@@ -133,10 +169,6 @@ HANIO:          LDAA RECVAL
                 CMPA #$0F
                 BEQ HANIOFLUSH          ;The flush key was pressed
                 STAA USERIO
-                PSHA
-                JSR COV7SEG
-                LEAS 1,SP
-                STAA PORTA
                 BRA HANIOEND
 HANIOFLUSH:     LDAA USERIO
                 PSHA
