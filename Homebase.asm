@@ -6,16 +6,18 @@
                 BRA MAIN        ;GOTO main
 
 COUNT:          RMB 2
-BUFFER:         RMB 10
-INDEX:          RMB 2
 SPACE:          RMB 1
+
+USERIO:         RMB 1
+
+PRESSNUM:       RMB 1
+RECNUM:         RMB 1
         
         
-MAIN:           MOVB #$FF, DDRA
-                MOVB #$0F, DDRB
-                JSR TIMSET
+MAIN:           MOVB #$FF, DDRA         ;Port A is all output
+                MOVB #$0F, DDRB         ;Upper nibble is output and lower nibble is input
+                JSR TIMSET              ;Setup Timer Overflow
                 MOVW #$0000, COUNT      ;Init count
-                MOVW #$0000, INDEX      ;Init index
                 MOVB #$00, SPACE        ;Init space
                 JSR SCISET              ;Setup SCI
                 CLI                     ;Enable interrupts
@@ -90,67 +92,40 @@ COV7SEG9:       LDAA #%01101111
 ;void INTH(void)
 ;Handles the timer overflow interrupt
 ;-------------------------------------------------------------------------------
-INTH:                LDD COUNT       ;Increment count
+INTH:           LDD COUNT
                 ADDD #$0001
                 STD COUNT
-                LDX #$0002      ;---
-                IDIV            ;Divide by 2 and see what our remainder is
-                CPD #$0000      ;If the remainder is 0 then send power to the
-                BNE INT2AN      ;first anode and otherwise send power to the
-                LDAA PORTA      ;second anode
-                ORAA #$80       ;--
-                STAA PORTA
-                BRA INTCHKIO
-INT2AN:         LDAA PORTA
-                ANDA #$7F
-                STAA PORTA
-INTCHKIO:       LDD COUNT
-                CPD #$005F      ;See if we need to check the keypad
+                CPD #$005F              ;See if we need to check the keypad
                 BNE INTCLR
-                MOVW #$0000, COUNT ;Reset the value of count
-                JSR KEYIO       ;Check to see if we have input
-                CMPA #$11
-                BEQ INTNOKY
-                CMPA #$0F       ;Check to see if we flush the buffer
-                BNE INTBUF
-                LDY INDEX       ;Flush key was pressed
-                STAA BUFFER,Y
-                TFR Y,D
-                ADDD #$0001
-                STD INDEX
-                LDY #$0000      ;Flush key was pressed
-INTHLP:         CPY INDEX
-                BEQ INTHELP
-                LDAA BUFFER,Y   ;Load byte into A register
-                PSHA
-                JSR SNDSCI      ;Call send byte subroutine
-                LEAS 1,SP
-                TFR Y,D         ;Add 1 to Y register which means we have to transfer
-                ADDD #$0001
-                TFR D,Y
-                BRA INTHLP
-INTHELP:        MOVW #$0000, INDEX ;Reset the buffer
-                SWI
-                BRA INTCLR
-INTBUF:         LDAB SPACE      ;Make sure there was a space inbetween
-                CMPB #$00
-                BEQ INTCLR
-                PSHA
-                JSR COV7SEG     ;Convert number into 7 seg display
-                STAA PORTA
-                PULA
-                LDY INDEX
-                STAA BUFFER,Y   ;Store the keystroke into the buffer
-                LDD INDEX       ;Increment index
-                ADDD #$0001
-                STD INDEX
-                MOVB #$00,SPACE          ;Set space = 0
-                BRA INTCLR
-INTNOKY:        MOVB #$01,SPACE         ;Set space to 1
+                MOVW #$0000, COUNT      ;Reset the value of count
+                JSR HANIO
 INTCLR:         LDAA TFLG2              ;Clear overflow bit
                 ANDA #$80
                 STAA TFLG2
                 RTI                     ;Return
+
+HANIO:          JSR KEYIO
+                CMPA #$11
+                BEQ HANIONOIO           ;We didn't have any input
+                LDAB SPACE
+                CMPB #$01               ;Make sure that was a space inbetween
+                BNE HANIOEND
+                MOVB #$00,SPACE
+                CMPA #$0F
+                BEQ HANIOFLUSH          ;The flush key was pressed
+                STAA USERIO
+                PSHA
+                JSR COV7SEG
+                LEAS 1,SP
+                STAA PORTA
+                BRA HANIOEND
+HANIOFLUSH:     LDAA USERIO
+                PSHA
+                JSR SNDSCI
+                LEAS 1,SP
+                RTS
+HANIONOIO:      MOVB #$01,SPACE
+HANIOEND: 	RTS
 
 ;-------------------------------------------------------------------------------
 ;void SCISET(void)
@@ -174,6 +149,20 @@ SNDSCI:         LDAA SC1SR1
                 BEQ SNDSCI      ;Make sure that we can send the bit
                 LDAA 2,SP       ;Get the data off the stack
                 STAA SC1DRL     ;Transmit
+                RTS
+                
+;-------------------------------------------------------------------------------
+;byte GETSCI(void)
+;Sub routine to recieve input from SCC. Returns charater in A register. If
+;there was no input it returns B = $00.
+;-------------------------------------------------------------------------------
+GETSCI:         LDAA    SC1SR1
+                ANDA    #$20
+                BEQ     GETSCIa
+                LDAA    SC1DRL
+                LDAB    #$FF
+                RTS
+GETSCIa:        LDD     #$0000
                 RTS
 
 ;-------------------------------------------------------------------------------
