@@ -9,6 +9,7 @@ COUNT:          RMB 2
 SPACE:          RMB 1
 
 USERIO:         RMB 1
+RECVAL:         FCB 0
 
 PRESSNUM:       RMB 1
 RECNUM:         RMB 1
@@ -98,13 +99,31 @@ INTH:           LDD COUNT
                 CPD #$005F              ;See if we need to check the keypad
                 BNE INTCLR
                 MOVW #$0000, COUNT      ;Reset the value of count
+                JSR HANREC
                 JSR HANIO
 INTCLR:         LDAA TFLG2              ;Clear overflow bit
                 ANDA #$80
                 STAA TFLG2
                 RTI                     ;Return
 
-HANIO:          JSR KEYIO
+;-------------------------------------------------------------------------------
+;void HANREC(void)
+;Handles the saving of the recieved value if one was sent to us
+;-------------------------------------------------------------------------------
+HANREC:         JSR GETSCI
+                CMPB #$00
+                BEQ HANRECEND
+                STAA RECVAL
+HANRECEND:      RTS
+
+;-------------------------------------------------------------------------------
+;void HANIO(void)
+;Handles the keypad input
+;-------------------------------------------------------------------------------
+HANIO:          LDAA RECVAL
+                CMPA #$0C
+                BNE HANIOEND
+		JSR KEYIO
                 CMPA #$11
                 BEQ HANIONOIO           ;We didn't have any input
                 LDAB SPACE
@@ -123,6 +142,7 @@ HANIOFLUSH:     LDAA USERIO
                 PSHA
                 JSR SNDSCI
                 LEAS 1,SP
+                MOVB #$00, RECVAL
                 RTS
 HANIONOIO:      MOVB #$01,SPACE
 HANIOEND: 	RTS
