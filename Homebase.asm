@@ -9,10 +9,14 @@ COUNT:          RMB 2
 SPACE:          RMB 1
 
 USERIO:         RMB 1
-RECVAL:         FCB 0
+RECVAL:         FCB 12
 
 DCOUNT:         RMB 2
 TOGGLE:         FCB 0
+
+WHDCOUNT:       FCB 0
+WHCOUNT:        FCB 0
+WHVAL:          FCB 0
 
 PRESSNUM:       RMB 1
 RECNUM:         RMB 1
@@ -49,8 +53,8 @@ TIMSET:         MOVB #$80, TSCR         ;Turn on timer
 ;void COV7SEG(int number)
 ;Converts the number to a seven seg display
 ;-------------------------------------------------------------------------------
-COV7SEG:        LDAB 2,SP
-                CMPB #$00
+COV7SEG:        LDAB 2,SP               ;Load number into B register
+                CMPB #$00               ;Compare it with different numbers
                 BEQ COV7SEG0
                 CMPB #$01
                 BEQ COV7SEG1
@@ -70,7 +74,7 @@ COV7SEG:        LDAB 2,SP
                 BEQ COV7SEG8
                 CMPB #$09
                 BEQ COV7SEG9
-                LDAA #%01111001
+                LDAA #%01111001         ;Binary representations of 7 LED configurations
                 RTS
 COV7SEG0:       LDAA #%00111111
                 RTS
@@ -94,11 +98,42 @@ COV7SEG9:       LDAA #%01101111
                 RTS
 
 ;-------------------------------------------------------------------------------
+;void COV7SEG(int number)
+;Converts the number to a seven seg display
+;-------------------------------------------------------------------------------
+WHL7SEG:        LDAB 2,SP               ;Load number into B register
+                CMPB #$00               ;Compare it with different numbers
+                BEQ WHL7SEG0
+                CMPB #$01
+                BEQ WHL7SEG1
+                CMPB #$02
+                BEQ WHL7SEG2
+                CMPB #$03
+                BEQ WHL7SEG3
+                CMPB #$04
+                BEQ WHL7SEG4
+                CMPB #$05
+                BEQ WHL7SEG5
+                RTS
+WHL7SEG0:       LDAA #%00000001
+                RTS
+WHL7SEG1:       LDAA #%00000010
+                RTS
+WHL7SEG2:       LDAA #%00000100
+                RTS
+WHL7SEG3:       LDAA #%00001000
+                RTS
+WHL7SEG4:       LDAA #%00010000
+                RTS
+WHL7SEG5:       LDAA #%00100000
+                RTS
+
+;-------------------------------------------------------------------------------
 ;void INTH(void)
 ;Handles the timer overflow interrupt
 ;-------------------------------------------------------------------------------
 INTH:           JSR HAN7DISPLAY
-		LDD COUNT
+                LDD COUNT
                 ADDD #$0001
                 STD COUNT
                 CPD #$001F              ;See if we need to check the keypad
@@ -116,30 +151,58 @@ INTCLR:         LDAA TFLG2              ;Clear overflow bit
 ;Handles the displaying of the user input and recieved value
 ;-------------------------------------------------------------------------------
 HAN7DISPLAY:    PSHD
-                LDD DCOUNT
+                LDD DCOUNT              ;Load count and increment
                 ADDD #$0001
                 STD DCOUNT
                 CPD #$0001
                 BNE HAN7DISPLAYEND
-                MOVW #$0000,DCOUNT
+                MOVW #$0000,DCOUNT      ;Reset count
                 LDAA TOGGLE             ;See who's turn it is to display
                 CMPA #$00
                 BNE HAN7DISPLAYREC
+                MOVB #$01,TOGGLE
                 LDAA USERIO             ;Its the user io turn
                 PSHA
                 JSR COV7SEG
                 LEAS 1,SP
                 ANDA #$7F               ;Make PA7 is low
                 STAA PORTA
-                MOVB #$01,TOGGLE
                 BRA HAN7DISPLAYEND
-HAN7DISPLAYREC: LDAA RECVAL
+HAN7DISPLAYREC: MOVB #$00,TOGGLE
+		LDAA RECVAL
+                CMPA #$0C               ;See if it is our user input value
+                BEQ HAN7DISPLAYWH
                 PSHA
                 JSR COV7SEG
                 LEAS 1,SP
                 ORAA #$80
                 STAA PORTA
                 MOVB #$00,TOGGLE
+                BRA HAN7DISPLAYEND
+HAN7DISPLAYWH:  LDAA WHVAL
+                PSHA
+                JSR WHL7SEG
+                LEAS 1,SP
+                ORAA #$80
+                STAA PORTA
+		LDAA WHDCOUNT
+                ADDA #$01
+                STAA WHDCOUNT
+                CMPA #$5F
+                BNE HAN7DISPLAYEND
+                MOVB #$00,WHDCOUNT
+		LDAA WHVAL
+                ADDA #$01
+                STAA WHVAL
+                CMPA #$06
+                BNE HAN7DISPLAYWHD
+                MOVB #$00,WHVAL
+HAN7DISPLAYWHD: LDAA WHVAL
+                PSHA
+                JSR WHL7SEG
+                LEAS 1,SP
+                ORAA #$80
+                STAA PORTA
 HAN7DISPLAYEND: PULD
                 RTS
 ;-------------------------------------------------------------------------------
@@ -149,17 +212,21 @@ HAN7DISPLAYEND: PULD
 HANREC:         JSR GETSCI
                 CMPB #$00
                 BEQ HANRECEND
+                CMPA #$0F
+                BEQ HANRECCON
                 STAA RECVAL
+                BRA HANRECEND
+HANRECCON:      NOP
 HANRECEND:      RTS
 
 ;-------------------------------------------------------------------------------
 ;void HANIO(void)
 ;Handles the keypad input
 ;-------------------------------------------------------------------------------
-HANIO:          LDAA RECVAL
-                CMPA #$0C
+HANIO:          LDAA RECVAL             ;Load recieved value
+                CMPA #$0C               ;Compare it to 0x0C
                 BNE HANIOEND
-		JSR KEYIO
+                JSR KEYIO
                 CMPA #$11
                 BEQ HANIONOIO           ;We didn't have any input
                 LDAB SPACE
@@ -177,7 +244,7 @@ HANIOFLUSH:     LDAA USERIO
                 MOVB #$00, RECVAL
                 RTS
 HANIONOIO:      MOVB #$01,SPACE
-HANIOEND: 	RTS
+HANIOEND:         RTS
 
 ;-------------------------------------------------------------------------------
 ;void SCISET(void)
